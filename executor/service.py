@@ -68,6 +68,7 @@ class ExecutorService:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.started_ts = time.time()
+        self._oneway_warned = False
         clock = ServerClock()
         ws = BinanceWsApi(settings.ws_api_url, settings.api_key, settings.api_secret, clock, settings.recv_window_ms)
         rest = RestClient(settings.rest_url, settings.api_key, settings.api_secret, clock, settings.proxy_urls,
@@ -225,6 +226,13 @@ class ExecutorService:
         acct = self.core.account
         log.info("Cuenta sincronizada (%s): %d posiciones, modo %s, %d leverages en caché",
                  reason, len(acct.positions), "Hedge" if acct.is_hedge else "One-way", len(acct.leverage))
+        if acct.hedge_mode is False and not self._oneway_warned:
+            self._oneway_warned = True
+            msg = ("La cuenta está en modo One-way: un LONG y un SHORT del mismo símbolo se compensan entre sí. "
+                   "Para operar con botKLINE activa Hedge mode (pestaña Sistema o Binance → Preferencias)")
+            log.warning(msg)
+            self.core.bus.emit("position_mode", msg, "warning")
+            self.core.telegram.send(f"⚠️ <b>Modo One-way</b>\n{msg}")
 
     async def refresh_balance(self, force: bool = False) -> None:
         if not force and time.time() - self._last_balance < 3:
@@ -422,7 +430,7 @@ class ExecutorService:
                 "source": "grid" if grid else (trade.source if trade else "externa"),
                 "trade_id": trade.id if trade else None, "paper_id": trade.paper_trade_id if trade else None,
                 "paper_ids": trade.paper_ids if trade else [], "levels": trade.to_dict()["levels"] if trade else [],
-                "multiplier": trade.multiplier if trade else 1.0,
+                "multiplier": trade.multiplier if trade else 1.0, "lots": self._lots_view(trade),
                 "open_time": trade.open_time if trade else "", "assumed": False,
                 "fees": trade.fees_usdt if trade else 0.0,
             })
@@ -438,10 +446,19 @@ class ExecutorService:
                 "margin_type": "", "liq": 0.0, "tp": t.tp_price, "sl": t.sl_price,
                 "source": t.source, "trade_id": t.id, "paper_id": t.paper_trade_id, "paper_ids": t.paper_ids,
                 "levels": t.to_dict()["levels"], "open_time": t.open_time, "multiplier": t.multiplier,
+                "lots": self._lots_view(t),
                 "assumed": t.order_assumed or not self.settings.has_credentials, "fees": t.fees_usdt,
             })
         rows.sort(key=lambda r: (r["symbol"], r["direction"]))
         return rows
+
+    @staticmethod
+    def _lots_view(trade) -> list[dict]:
+        """Qué parte de la posición es de cada trade_id del bot (0 = manual / sin trade_id)."""
+        if trade is None:
+            return []
+        return [{"trade_id": int(k), "qty": v.get("qty", 0.0), "entry": v.get("entry", 0.0)}
+                for k, v in sorted(trade.lots.items(), key=lambda kv: int(kv[0]))]
 
     def orders_view(self, symbol: Optional[str] = None) -> list[dict]:
         rows = [o.to_dict() for o in self.core.account.orders.values()]

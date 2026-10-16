@@ -746,6 +746,13 @@
   function emptyRow(cols, text) { return `<tr class="empty-row"><td colspan="${cols}">${text}</td></tr>`; }
   const SRC = { signal: 'Señal', manual: 'Manual', grid: 'Grid', externa: 'Externa' };
 
+  // Qué parte de la posición es de cada trade_id del bot (cada close cierra solo la suya).
+  function lotsLabel(p) {
+    const lots = (p.lots || []).filter((l) => l.trade_id);
+    if (lots.length > 1) return ` · trade_id ${lots.map((l) => `${l.trade_id} (${fq(l.qty)})`).join(', ')}`;
+    return p.paper_id ? ` · paper #${p.paper_id}` : '';
+  }
+
   function renderPositions() {
     const rows = filtered(S.snap ? S.snap.positions : []);
     const head = `<thead><tr><th>Símbolo</th><th class="r">Tamaño</th><th class="r">Entrada</th><th class="r">Marca</th>
@@ -755,7 +762,7 @@
         <td class="sym ${dcls(p.direction)}"><b class="link" data-act="select">${esc(p.symbol)}</b>
           <span class="badge ${dcls(p.direction)}">${p.direction === 'LONG' ? 'Long' : 'Short'}</span> <span class="badge">${p.leverage}x</span>${num(p.multiplier) && num(p.multiplier) !== 1 ? ` <span class="badge y" title="Tamaño multiplicado">×${fn(p.multiplier, num(p.multiplier) % 1 ? 2 : 0)}</span>` : ''}
           ${p.assumed ? '<span class="badge y" title="Registrada sin orden real (margen insuficiente)">ASUMIDA</span>' : ''}
-          <span class="sub">${p.margin_type === 'isolated' ? 'Aislado' : p.margin_type ? 'Cruzado' : ''}${p.trade_id ? ` · #${p.trade_id}` : ''}${p.paper_id ? ` · paper #${p.paper_id}` : ''}</span></td>
+          <span class="sub">${p.margin_type === 'isolated' ? 'Aislado' : p.margin_type ? 'Cruzado' : ''}${p.trade_id ? ` · #${p.trade_id}` : ''}${lotsLabel(p)}</span></td>
         <td class="r ${p.direction === 'LONG' ? 'up' : 'down'}">${fq(p.qty)} ${esc(baseOf(p.symbol))}<span class="sub">${fn(p.notional)} USDT</span></td>
         <td class="r">${fp(p.entry, p.symbol)}${p.break_even ? `<span class="sub">BE ${fp(p.break_even, p.symbol)}</span>` : ''}</td>
         <td class="r">${fp(p.mark, p.symbol)}</td>

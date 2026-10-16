@@ -148,6 +148,16 @@ mensaje `{"secret": "..."}`; cada mensaje recibe respuesta y puede llevar `id`).
   los `open` recibidos antes que él, nunca a los posteriores.
 - Si Binance no confirma una apertura (timeout, estado desconocido) el executor relee la posición real y la registra
   si se abrió, así el `close` del bot siempre la cierra.
+- **Varias operaciones en el mismo símbolo (botKLINE).** Binance junta en una sola posición todos los `trade_id` del
+  mismo símbolo y dirección; el executor guarda en `lots` la cantidad real que abrió cada `trade_id`. Un `close` sin
+  `quantity` vende (reduceOnly) solo el lote de su `trade_id` y la posición se cierra entera únicamente cuando era el
+  último lote. Cada lote cerrado queda en el historial como operación propia, con su PnL y el `pnl` del bot.
+  - Un `close` de un `trade_id` que no está en la posición nunca la toca: queda en espera 30 s por si su `open` llega
+    tarde. Repetir el `close` de un `trade_id` ya cerrado no hace nada.
+  - Dos `close` simultáneos de la misma posición (varios TP en el mismo tick) se ejecutan uno detrás de otro.
+  - Una reducción hecha fuera del executor (parcial manual en Binance) se reparte en proporción entre los lotes.
+  - Usa la cuenta en **Hedge mode**: en One-way un LONG y un SHORT del mismo símbolo se compensan entre sí; el
+    executor lo avisa al arrancar (dashboard y Telegram).
 - `POST /signal?wait=1` espera el resultado en Binance (hasta `SIGNAL_WAIT_TIMEOUT_S`) y lo devuelve en `result`.
 - Un secreto incorrecto responde 401 y queda visible en la pestaña Señales y en `GET /api/signals`.
 - Las peticiones de un navegador desde otro sitio (`Origin` ajeno) se rechazan en `/signal`, `/ws/signal` y `/ws`
